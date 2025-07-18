@@ -118,12 +118,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support, please create an issue on the [GitHub repository](https://github.com/thomasgerdes/acf-photo-credits-schema).
 
-## Author
-
-**Thomas Gerdes**
-- Website: [https://thomasgerdes.de](https://thomasgerdes.de)
-- GitHub: [@thomasgerdes](https://github.com/thomasgerdes)
-
 ## Changelog
 
 ### 1.0.0
