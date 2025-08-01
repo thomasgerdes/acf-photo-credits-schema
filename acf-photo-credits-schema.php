@@ -3,7 +3,7 @@
  * Plugin Name: ACF Photo Credits Schema
  * Plugin URI: https://github.com/thomasgerdes/acf-photo-credits-schema
  * Description: WordPress plugin that adds Schema.org markup for photographer credits and Creative Commons licenses from Advanced Custom Fields
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Thomas Gerdes
  * Author URI: https://thomasgerdes.de
  * License: MIT
@@ -16,99 +16,131 @@
  * Network: false
  */
 
-// Prevent direct access
+// Prevent direct access to the file
 if (!defined('ABSPATH')) {
     exit;
 }
 
 /**
- * ACF Photo Credits Schema Plugin
- * 
- * A WordPress plugin that automatically generates Schema.org markup for photographer
- * credits and Creative Commons licenses stored in Advanced Custom Fields.
- * 
- * This plugin adds structured data to help search engines understand image
- * attribution and licensing information on your website.
+ * Main class for the ACF Photo Credits Schema plugin.
+ *
+ * This plugin automatically generates Schema.org markup for images based on
+ * data stored in Advanced Custom Fields (ACF). It supports photographer credits,
+ * Creative Commons licenses, and enhances WordPress sitemaps with image metadata.
+ *
+ * Key features:
+ * - Generates ImageObject schema for images with ACF data
+ * - Supports both individual and default values for license acquisition pages
+ * - Automatically includes featured images and content images as separate schemas
+ * - Enhances WordPress sitemaps with image credit information
+ * - Configurable target categories and automatic copyright generation
+ *
+ * @since 1.0.0
  */
 class ACF_Photo_Credits_Schema {
-    
+
     /**
-     * Plugin version
+     * Plugin version number
+     *
+     * @since 1.0.0
+     * @var string
      */
-    const VERSION = '1.0.0';
-    
+    const VERSION = '1.1.0';
+
     /**
-     * Plugin slug
+     * Plugin slug used for options and hooks
+     *
+     * @since 1.0.0
+     * @var string
      */
     const PLUGIN_SLUG = 'acf-photo-credits-schema';
-    
+
     /**
-     * Text domain for translations
+     * Text domain for internationalization
+     *
+     * @since 1.0.0
+     * @var string
      */
     const TEXT_DOMAIN = 'acf-photo-credits-schema';
-    
+
     /**
-     * Constructor
+     * Constructor.
+     *
+     * Registers all necessary hooks and activation/deactivation callbacks.
+     *
+     * @since 1.0.0
      */
     public function __construct() {
         add_action('init', array($this, 'init'));
         register_activation_hook(__FILE__, array($this, 'activate'));
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
     }
-    
+
     /**
-     * Initialize plugin
+     * Initializes the plugin.
+     *
+     * Loads the text domain, checks for ACF dependency, and sets up all core hooks.
+     *
+     * @since 1.0.0
      */
     public function init() {
         // Load text domain for translations
         load_plugin_textdomain(self::TEXT_DOMAIN, false, dirname(plugin_basename(__FILE__)) . '/languages');
-        
-        // Check if ACF is active
+
+        // Check if ACF is active (required dependency)
         if (!function_exists('get_field')) {
             add_action('admin_notices', array($this, 'acf_missing_notice'));
             return;
         }
-        
-        // Hook into WordPress
-        add_action('wp_head', array($this, 'add_image_schema'), 20);
-        add_action('wp_head', array($this, 'add_article_schema'), 21);
-        add_action('wp_head', array($this, 'add_meta_tags'), 22);
-        add_action('acf/save_post', array($this, 'auto_fill_cc_license_link'));
+
+        // Core functionality hooks
+        add_action('wp_head', array($this, 'add_combined_schema'), 20);
         add_filter('wp_sitemaps_posts_entry', array($this, 'enhance_sitemap'), 10, 3);
-        
-        // Admin hooks
+
+        // Admin interface hooks
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         add_filter('plugin_action_links_' . plugin_basename(__FILE__), array($this, 'add_settings_link'));
     }
-    
+
     /**
-     * Plugin activation
+     * Plugin activation hook.
+     *
+     * Initializes default plugin settings upon activation.
+     *
+     * @since 1.0.0
      */
     public function activate() {
-        // Set default options
         $default_settings = array(
             'target_categories' => array('photolog'),
             'auto_fill_cc_links' => true,
-            'include_sitemap_data' => true
+            'include_sitemap_data' => true,
+            'auto_generate_copyright' => true,
+            'default_license_page' => ''
         );
         
         add_option(self::PLUGIN_SLUG . '_settings', $default_settings);
-        
-        // Clear rewrite rules
         flush_rewrite_rules();
     }
-    
+
     /**
-     * Plugin deactivation
+     * Plugin deactivation hook.
+     *
+     * Performs cleanup tasks upon plugin deactivation.
+     *
+     * @since 1.0.0
      */
     public function deactivate() {
-        // Clear rewrite rules
         flush_rewrite_rules();
     }
-    
+
     /**
-     * ACF missing notice
+     * Displays admin notice when ACF is not active.
+     *
+     * Shows an error notice in the WordPress admin if Advanced Custom Fields
+     * is not installed or activated.
+     *
+     * @since 1.0.0
      */
     public function acf_missing_notice() {
         $class = 'notice notice-error';
@@ -116,141 +148,65 @@ class ACF_Photo_Credits_Schema {
         
         printf('<div class="%1$s"><p>%2$s</p></div>', esc_attr($class), esc_html($message));
     }
-    
+
     /**
-     * Add settings link to plugin actions
+     * Adds settings link to plugin action links.
+     *
+     * Adds a "Settings" link to the plugin's action links on the plugins page.
+     *
+     * @since 1.0.0
+     * @param array $links Existing plugin action links.
+     * @return array Modified links array.
      */
     public function add_settings_link($links) {
         $settings_link = '<a href="' . admin_url('options-general.php?page=' . self::PLUGIN_SLUG) . '">' . __('Settings', self::TEXT_DOMAIN) . '</a>';
         array_unshift($links, $settings_link);
         return $links;
     }
-    
+
     /**
-     * Add image schema to head
+     * Outputs combined schema markup in the document head.
+     *
+     * Generates and outputs both ImageObject and Article schemas in a single
+     * JSON-LD block. This ensures proper recognition by search engines.
+     *
+     * @since 1.1.0
      */
-    public function add_image_schema() {
+    public function add_combined_schema() {
         if (!$this->should_add_schema()) {
             return;
         }
+
+        $schemas = array();
         
+        // Get all ImageObject schemas (includes featured image and content images)
         $image_schemas = $this->get_image_schemas();
-        
         if (!empty($image_schemas)) {
-            echo '<script type="application/ld+json">';
-            echo json_encode($image_schemas, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            echo '</script>' . "\n";
+            $schemas = array_merge($schemas, $image_schemas);
         }
-    }
-    
-    /**
-     * Add article schema to head
-     */
-    public function add_article_schema() {
-        if (!$this->should_add_schema()) {
-            return;
-        }
-        
+
+        // Add the Article schema
         $article_schema = $this->get_article_schema();
-        
         if ($article_schema) {
+            $schemas[] = $article_schema;
+        }
+
+        // Output combined schema if we have any data
+        if (!empty($schemas)) {
             echo '<script type="application/ld+json">';
-            echo json_encode($article_schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            echo json_encode($schemas, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             echo '</script>' . "\n";
         }
     }
-    
+
     /**
-     * Add meta tags
-     */
-    public function add_meta_tags() {
-        if (!$this->should_add_schema()) {
-            return;
-        }
-        
-        $featured_image_id = get_post_thumbnail_id();
-        if (!$featured_image_id) {
-            return;
-        }
-        
-        $photographer = get_field('photographer', $featured_image_id);
-        $cc_license = get_field('cc_license', $featured_image_id);
-        $cc_license_link = get_field('cc_license_link', $featured_image_id);
-        
-        if ($photographer || $cc_license) {
-            $credit_text = $this->build_credit_text($photographer, $cc_license);
-            
-            // Open Graph tags
-            echo '<meta property="og:image:alt" content="' . esc_attr($credit_text) . '">' . "\n";
-            
-            // Copyright meta tags
-            if ($photographer) {
-                echo '<meta name="dcterms.rightsHolder" content="' . esc_attr($photographer) . '">' . "\n";
-                echo '<meta name="copyright" content="' . esc_attr($photographer) . '">' . "\n";
-            }
-            
-            // License meta tags
-            if ($cc_license) {
-                echo '<meta name="dcterms.license" content="' . esc_attr($cc_license) . '">' . "\n";
-                
-                // Add license URL if available
-                if ($cc_license_link) {
-                    echo '<meta name="license" content="' . esc_attr($cc_license_link) . '">' . "\n";
-                }
-            }
-        }
-    }
-    
-    /**
-     * Auto-fill CC license link
-     */
-    public function auto_fill_cc_license_link($post_id) {
-        $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
-        
-        if (!isset($settings['auto_fill_cc_links']) || !$settings['auto_fill_cc_links']) {
-            return;
-        }
-        
-        if (get_post_type($post_id) !== 'attachment') {
-            return;
-        }
-        
-        $cc_license = get_field('cc_license', $post_id);
-        $cc_license_link = get_field('cc_license_link', $post_id);
-        
-        if ($cc_license && empty($cc_license_link)) {
-            $license_url = $this->get_cc_license_url($cc_license);
-            if ($license_url) {
-                update_field('cc_license_link', $license_url, $post_id);
-            }
-        }
-    }
-    
-    /**
-     * Enhance sitemap with image data
-     */
-    public function enhance_sitemap($sitemap_entry, $post, $post_type) {
-        $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
-        
-        if (!isset($settings['include_sitemap_data']) || !$settings['include_sitemap_data']) {
-            return $sitemap_entry;
-        }
-        
-        if ($post_type !== 'post' || !$this->is_target_category($post->ID)) {
-            return $sitemap_entry;
-        }
-        
-        $image_data = $this->get_post_images_for_sitemap($post);
-        
-        if (!empty($image_data)) {
-            $sitemap_entry['images'] = $image_data;
-        }
-        
-        return $sitemap_entry;
-    }
-    
-    /**
-     * Check if schema should be added
+     * Determines if schema markup should be added to the current page.
+     *
+     * Checks if the current page is a single post and belongs to one of the
+     * configured target categories.
+     *
+     * @since 1.0.0
+     * @return bool True if schema should be added, false otherwise.
      */
     private function should_add_schema() {
         if (!is_single()) {
@@ -261,7 +217,6 @@ class ACF_Photo_Credits_Schema {
         $target_categories = isset($settings['target_categories']) ? $settings['target_categories'] : array('photolog');
         
         foreach ($target_categories as $category) {
-            // Check both category slug and name to handle case sensitivity
             if (in_category($category) || in_category(strtolower($category)) || in_category(ucfirst(strtolower($category)))) {
                 return true;
             }
@@ -269,16 +224,19 @@ class ACF_Photo_Credits_Schema {
         
         return false;
     }
-    
+
     /**
-     * Check if post is in target category
+     * Checks if a post belongs to one of the target categories.
+     *
+     * @since 1.0.0
+     * @param int $post_id The post ID to check.
+     * @return bool True if the post is in a target category, false otherwise.
      */
     private function is_target_category($post_id) {
         $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
         $target_categories = isset($settings['target_categories']) ? $settings['target_categories'] : array('photolog');
         
         foreach ($target_categories as $category) {
-            // Check both category slug and name to handle case sensitivity
             if (in_category($category, $post_id) || in_category(strtolower($category), $post_id) || in_category(ucfirst(strtolower($category)), $post_id)) {
                 return true;
             }
@@ -286,21 +244,42 @@ class ACF_Photo_Credits_Schema {
         
         return false;
     }
-    
+
     /**
-     * Get image schemas
+     * Retrieves and builds image schemas from post content and featured image.
+     *
+     * Scans the current post for images and generates Schema.org ImageObject
+     * markup for each image that has ACF photo credit data.
+     *
+     * @since 1.1.0
+     * @return array Array of ImageObject schema arrays.
      */
     private function get_image_schemas() {
         global $post;
         
+        $image_ids = array();
+        
+        // Include featured image to ensure separate ImageObject schema generation
+        $featured_image_id = get_post_thumbnail_id();
+        if ($featured_image_id) {
+            $image_ids[] = $featured_image_id;
+        }
+        
+        // Extract image IDs from post content using WordPress image CSS classes
         preg_match_all('/wp-image-(\d+)/', $post->post_content, $matches);
-        if (empty($matches[1])) {
+        if (!empty($matches[1])) {
+            $content_image_ids = array_unique($matches[1]);
+            $image_ids = array_merge($image_ids, $content_image_ids);
+        }
+        
+        // Remove duplicates and process each unique image
+        $image_ids = array_unique($image_ids);
+        
+        if (empty($image_ids)) {
             return array();
         }
         
-        $image_ids = array_unique($matches[1]);
         $schemas = array();
-        
         foreach ($image_ids as $image_id) {
             $schema = $this->build_image_schema($image_id);
             if ($schema) {
@@ -310,25 +289,38 @@ class ACF_Photo_Credits_Schema {
         
         return $schemas;
     }
-    
+
     /**
-     * Build image schema
+     * Builds Schema.org ImageObject markup for a single image.
+     *
+     * Creates comprehensive ImageObject schema including creator information,
+     * licensing details, and acquisition page data from ACF fields.
+     *
+     * @since 1.0.0
+     * @param int $image_id WordPress attachment ID.
+     * @return array|null ImageObject schema array or null if no relevant data.
      */
     private function build_image_schema($image_id) {
+        // Retrieve ACF field data
         $photographer = get_field('photographer', $image_id);
         $photographer_website = get_field('photographer_website', $image_id);
         $cc_license = get_field('cc_license', $image_id);
         $cc_license_link = get_field('cc_license_link', $image_id);
+        $acquire_license_page = get_field('acquire_license_page', $image_id);
+        $copyright_notice = get_field('copyright_notice', $image_id);
         
+        // Skip images without relevant credit data
         if (!$photographer && !$cc_license) {
             return null;
         }
         
+        // Get basic image information
         $image_url = wp_get_attachment_url($image_id);
         $image_meta = wp_get_attachment_metadata($image_id);
         $image_alt = get_post_meta($image_id, '_wp_attachment_image_alt', true);
         $image_title = get_the_title($image_id);
         
+        // Build base schema structure
         $schema = array(
             '@context' => 'https://schema.org',
             '@type' => 'ImageObject',
@@ -339,57 +331,36 @@ class ACF_Photo_Credits_Schema {
             'name' => $image_title
         );
         
-        // Add dimensions
+        // Add image dimensions if available
         if (isset($image_meta['width']) && isset($image_meta['height'])) {
             $schema['width'] = $image_meta['width'];
             $schema['height'] = $image_meta['height'];
         }
         
-        // Add creator
+        // Add creator information
         if ($photographer) {
-            $creator = array(
+            $schema['creator'] = array(
                 '@type' => 'Person',
                 'name' => $photographer
             );
             
-            if ($photographer_website) {
-                $creator['url'] = $photographer_website;
+            if (!empty($photographer_website)) {
+                $schema['creator']['url'] = $photographer_website;
             }
-            
-            $schema['creator'] = $creator;
         }
         
-        // Add license
+        // Process Creative Commons license information
         if ($cc_license) {
-            // CC-specific properties
-            if (strpos($cc_license, 'CC') === 0) {
-                if ($cc_license_link) {
-                    $schema['license'] = $cc_license_link;
-                }
-                
-                // More descriptive usage info for CC licenses
-                $usage_descriptions = array(
-                    'CC BY' => 'CC BY - Attribution required',
-                    'CC BY-SA' => 'CC BY-SA - Attribution and ShareAlike required',
-                    'CC BY-NC' => 'CC BY-NC - Attribution required, non-commercial use only',
-                    'CC BY-NC-SA' => 'CC BY-NC-SA - Attribution and ShareAlike required, non-commercial use only',
-                    'CC BY-ND' => 'CC BY-ND - Attribution required, no derivatives allowed',
-                    'CC BY-NC-ND' => 'CC BY-NC-ND - Attribution required, non-commercial use only, no derivatives allowed',
-                    'CC0' => 'CC0 - Public Domain, no rights reserved'
-                );
-                
-                $schema['usageInfo'] = isset($usage_descriptions[$cc_license]) ? $usage_descriptions[$cc_license] : $cc_license;
-                
-                if ($photographer) {
-                    $schema['creditText'] = "Photo by " . $photographer . " / " . $cc_license;
-                }
-            } else {
-                // Non-CC licenses
-                $schema['usageInfo'] = $cc_license;
-            }
+            $this->add_license_schema($schema, $cc_license, $cc_license_link, $photographer);
         }
         
-        // Add upload date
+        // Handle license acquisition page with fallback support
+        $this->add_acquisition_page_schema($schema, $acquire_license_page, $photographer_website, $image_id);
+        
+        // Add copyright notice with automatic generation
+        $this->add_copyright_notice_schema($schema, $copyright_notice, $photographer);
+        
+        // Add publication date
         $upload_date = get_the_date('c', $image_id);
         if ($upload_date) {
             $schema['datePublished'] = $upload_date;
@@ -397,20 +368,185 @@ class ACF_Photo_Credits_Schema {
         
         return $schema;
     }
-    
+
     /**
-     * Get article schema
+     * Adds license-related schema properties to an image schema.
+     *
+     * Processes Creative Commons licenses and adds appropriate license,
+     * usageInfo, and creditText properties to the schema.
+     *
+     * @since 1.1.0
+     * @param array $schema Reference to the schema array being built.
+     * @param string $cc_license The Creative Commons license designation.
+     * @param string $cc_license_link The license URL.
+     * @param string $photographer The photographer's name.
+     */
+    private function add_license_schema(&$schema, $cc_license, $cc_license_link, $photographer) {
+        // Clean license name (remove parenthetical descriptions like "(Attribution)")
+        $clean_license = preg_replace('/\s*\([^)]+\)/', '', $cc_license);
+        
+        // Handle Creative Commons licenses
+        if (strpos($clean_license, 'CC') === 0) {
+            // Add license URL
+            $license_url = $cc_license_link ?: $this->get_cc_license_url($clean_license);
+            if ($license_url) {
+                $schema['license'] = $license_url;
+            }
+            
+            // Add human-readable usage information
+            $schema['usageInfo'] = $this->get_cc_usage_description($clean_license);
+            
+            // Generate credit text for CC licenses
+            if ($photographer) {
+                $formatted_license = $this->format_cc_license($clean_license);
+                $schema['creditText'] = "Photo by " . $photographer . " / " . $formatted_license;
+            }
+        } else {
+            // Handle non-Creative Commons licenses
+            $schema['usageInfo'] = $cc_license;
+        }
+    }
+
+    /**
+     * Adds license acquisition page to schema with multiple fallback options.
+     *
+     * Tries to find a valid license acquisition page using the following priority:
+     * 1. Individual image ACF field value
+     * 2. ACF field default value
+     * 3. Plugin settings default
+     * 4. Photographer website as fallback
+     *
+     * @since 1.1.0
+     * @param array $schema Reference to the schema array being built.
+     * @param string $acquire_license_page Direct field value.
+     * @param string $photographer_website Photographer's website URL.
+     * @param int $image_id Image attachment ID for accessing field defaults.
+     */
+    private function add_acquisition_page_schema(&$schema, $acquire_license_page, $photographer_website, $image_id) {
+        $license_page_url = '';
+
+        // Priority 1: Use direct field value if available
+        if (!empty($acquire_license_page) && filter_var($acquire_license_page, FILTER_VALIDATE_URL)) {
+            $license_page_url = $acquire_license_page;
+        } else {
+            // Priority 2: Try to get ACF field default value
+            $field_object = get_field_object('acquire_license_page', $image_id);
+            if (is_array($field_object) && !empty($field_object['default_value'])) {
+                $default_value = $field_object['default_value'];
+                if (filter_var($default_value, FILTER_VALIDATE_URL)) {
+                    $license_page_url = $default_value;
+                }
+            }
+        }
+
+        // Priority 3: Use plugin settings default if still empty
+        if (empty($license_page_url)) {
+            $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
+            $default_license_page = isset($settings['default_license_page']) ? trim($settings['default_license_page']) : '';
+            
+            if (!empty($default_license_page) && filter_var($default_license_page, FILTER_VALIDATE_URL)) {
+                $license_page_url = $default_license_page;
+            }
+        }
+
+        // Priority 4: Use photographer website as last resort
+        if (empty($license_page_url) && !empty($photographer_website) && filter_var($photographer_website, FILTER_VALIDATE_URL)) {
+            $license_page_url = $photographer_website;
+        }
+
+        // Add to schema if we found a valid URL
+        if (!empty($license_page_url)) {
+            $schema['acquireLicensePage'] = $license_page_url;
+        }
+    }
+
+    /**
+     * Adds copyright notice to schema with automatic generation fallback.
+     *
+     * Uses manual copyright notice if provided, otherwise generates one
+     * automatically from available credit information.
+     *
+     * @since 1.1.0
+     * @param array $schema Reference to the schema array being built.
+     * @param string $copyright_notice Manual copyright notice.
+     * @param string $photographer Photographer's name.
+     */
+    private function add_copyright_notice_schema(&$schema, $copyright_notice, $photographer) {
+        if (!empty($copyright_notice)) {
+            $schema['copyrightNotice'] = $copyright_notice;
+            return;
+        }
+        
+        // Check if automatic generation is enabled
+        $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
+        $auto_generate = isset($settings['auto_generate_copyright']) ? $settings['auto_generate_copyright'] : true;
+        
+        if (!$auto_generate) {
+            return;
+        }
+        
+        // Use credit text if available, otherwise create simple notice
+        if (isset($schema['creditText']) && !empty($schema['creditText'])) {
+            $schema['copyrightNotice'] = $schema['creditText'];
+        } elseif ($photographer) {
+            $schema['copyrightNotice'] = "Photo by " . $photographer;
+        }
+    }
+
+    /**
+     * Gets human-readable usage description for Creative Commons licenses.
+     *
+     * @since 1.1.0
+     * @param string $clean_license Clean CC license designation.
+     * @return string Usage description or the license designation itself.
+     */
+    private function get_cc_usage_description($clean_license) {
+        $usage_descriptions = array(
+            'CC BY' => 'CC BY 4.0 - Attribution required',
+            'CC BY 4.0' => 'CC BY 4.0 - Attribution required',
+            'CC BY-SA' => 'CC BY-SA 4.0 - Attribution and ShareAlike required',
+            'CC BY-SA 4.0' => 'CC BY-SA 4.0 - Attribution and ShareAlike required',
+            'CC BY-NC' => 'CC BY-NC 4.0 - Attribution required, non-commercial use only',
+            'CC BY-NC 4.0' => 'CC BY-NC 4.0 - Attribution required, non-commercial use only',
+            'CC BY-NC-SA' => 'CC BY-NC-SA 4.0 - Attribution and ShareAlike required, non-commercial use only',
+            'CC BY-NC-SA 4.0' => 'CC BY-NC-SA 4.0 - Attribution and ShareAlike required, non-commercial use only',
+            'CC BY-ND' => 'CC BY-ND 4.0 - Attribution required, no derivatives allowed',
+            'CC BY-ND 4.0' => 'CC BY-ND 4.0 - Attribution required, no derivatives allowed',
+            'CC BY-NC-ND' => 'CC BY-NC-ND 4.0 - Attribution required, non-commercial use only, no derivatives allowed',
+            'CC BY-NC-ND 4.0' => 'CC BY-NC-ND 4.0 - Attribution required, non-commercial use only, no derivatives allowed',
+            'CC0' => 'CC0 - Public Domain, no rights reserved'
+        );
+        
+        $formatted_license = $this->format_cc_license($clean_license);
+        
+        return isset($usage_descriptions[$clean_license]) ? $usage_descriptions[$clean_license] :
+               (isset($usage_descriptions[$formatted_license]) ? $usage_descriptions[$formatted_license] : $formatted_license);
+    }
+
+    /**
+     * Builds Schema.org Article markup for the current post.
+     *
+     * Creates Article schema with basic post information, author details,
+     * and category relationships.
+     *
+     * @since 1.0.0
+     * @return array|null Article schema array or null if no post available.
      */
     private function get_article_schema() {
         global $post;
         
-        $featured_image_id = get_post_thumbnail_id();
-        $featured_image_schema = null;
-        
-        if ($featured_image_id) {
-            $featured_image_schema = $this->build_image_schema($featured_image_id);
+        if (!is_object($post)) {
+            return null;
         }
         
+        // Get featured image URL for the article
+        $featured_image_url = null;
+        $featured_image_id = get_post_thumbnail_id();
+        if ($featured_image_id) {
+            $featured_image_url = wp_get_attachment_url($featured_image_id);
+        }
+        
+        // Build Article schema
         $schema = array(
             '@context' => 'https://schema.org',
             '@type' => 'Article',
@@ -432,11 +568,15 @@ class ACF_Photo_Credits_Schema {
             )
         );
         
-        if ($featured_image_schema) {
-            $schema['image'] = $featured_image_schema;
+        // Add featured image if available
+        if ($featured_image_url) {
+            $schema['image'] = array(
+                '@type' => 'ImageObject',
+                'url' => $featured_image_url
+            );
         }
         
-        // Add categories
+        // Add categories as 'about' property
         $categories = get_the_category();
         if ($categories) {
             $schema['about'] = array();
@@ -451,9 +591,45 @@ class ACF_Photo_Credits_Schema {
         
         return $schema;
     }
-    
+
     /**
-     * Get post images for sitemap
+     * Enhances WordPress sitemap entries with image credit data.
+     *
+     * Adds image metadata including credits and licenses to sitemap entries
+     * for better search engine understanding.
+     *
+     * @since 1.0.0
+     * @param array $sitemap_entry The original sitemap entry.
+     * @param object $post The post object.
+     * @param string $post_type The post type.
+     * @return array Modified sitemap entry.
+     */
+    public function enhance_sitemap($sitemap_entry, $post, $post_type) {
+        $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
+        
+        if (!isset($settings['include_sitemap_data']) || !$settings['include_sitemap_data']) {
+            return $sitemap_entry;
+        }
+        
+        if ($post_type !== 'post' || !$this->is_target_category($post->ID)) {
+            return $sitemap_entry;
+        }
+        
+        $image_data = $this->get_post_images_for_sitemap($post);
+        
+        if (!empty($image_data)) {
+            $sitemap_entry['images'] = $image_data;
+        }
+        
+        return $sitemap_entry;
+    }
+
+    /**
+     * Extracts image data from post content for sitemap inclusion.
+     *
+     * @since 1.0.0
+     * @param object $post The post object to process.
+     * @return array Array of image data for sitemap.
      */
     private function get_post_images_for_sitemap($post) {
         preg_match_all('/wp-image-(\d+)/', $post->post_content, $matches);
@@ -489,26 +665,34 @@ class ACF_Photo_Credits_Schema {
         
         return $images;
     }
-    
+
     /**
-     * Build credit text
+     * Formats Creative Commons license to include version number.
+     *
+     * Ensures CC licenses include the 4.0 version number for consistency.
+     *
+     * @since 1.0.0
+     * @param string $license The raw license designation.
+     * @return string Formatted license with version number.
      */
-    private function build_credit_text($photographer, $cc_license) {
-        $credit_text = '';
+    private function format_cc_license($license) {
+        $clean_license = preg_replace('/\s*\([^)]+\)/', '', $license);
         
-        if ($photographer) {
-            $credit_text .= 'Photo by ' . $photographer;
+        if (strpos($clean_license, 'CC') === 0 && strpos($clean_license, '4.0') === false && $clean_license !== 'CC0') {
+            return $clean_license . ' 4.0';
         }
         
-        if ($cc_license) {
-            $credit_text .= ($photographer ? ' / ' : '') . $cc_license;
-        }
-        
-        return $credit_text;
+        return $clean_license;
     }
-    
+
     /**
-     * Get CC license URL
+     * Gets the official URL for a Creative Commons license.
+     *
+     * Maps license designations to their official Creative Commons URLs.
+     *
+     * @since 1.0.0
+     * @param string $license The license designation.
+     * @return string The official license URL or empty string if not found.
      */
     private function get_cc_license_url($license) {
         $urls = array(
@@ -517,15 +701,21 @@ class ACF_Photo_Credits_Schema {
             'CC BY-NC' => 'https://creativecommons.org/licenses/by-nc/4.0/',
             'CC BY-NC-SA' => 'https://creativecommons.org/licenses/by-nc-sa/4.0/',
             'CC BY-ND' => 'https://creativecommons.org/licenses/by-nd/4.0/',
+            'CC BY-ND 4.0' => 'https://creativecommons.org/licenses/by-nd/4.0/',
             'CC BY-NC-ND' => 'https://creativecommons.org/licenses/by-nc-nd/4.0/',
+            'CC BY-NC-ND 4.0' => 'https://creativecommons.org/licenses/by-nc-nd/4.0/',
             'CC0' => 'https://creativecommons.org/publicdomain/zero/1.0/'
         );
         
-        return isset($urls[$license]) ? $urls[$license] : '';
+        $clean_license = preg_replace('/\s*\([^)]+\)/', '', $license);
+        
+        return isset($urls[$clean_license]) ? $urls[$clean_license] : '';
     }
-    
+
     /**
-     * Add admin menu
+     * Adds the plugin settings page to WordPress admin menu.
+     *
+     * @since 1.0.0
      */
     public function add_admin_menu() {
         add_options_page(
@@ -536,9 +726,11 @@ class ACF_Photo_Credits_Schema {
             array($this, 'admin_page')
         );
     }
-    
+
     /**
-     * Register settings
+     * Registers plugin settings and creates settings sections and fields.
+     *
+     * @since 1.0.0
      */
     public function register_settings() {
         register_setting(self::PLUGIN_SLUG . '_settings', self::PLUGIN_SLUG . '_settings');
@@ -559,9 +751,17 @@ class ACF_Photo_Credits_Schema {
         );
         
         add_settings_field(
-            'auto_fill_cc_links',
-            __('Auto-fill CC License Links', self::TEXT_DOMAIN),
-            array($this, 'auto_fill_cc_links_callback'),
+            'auto_generate_copyright',
+            __('Auto-generate Copyright Notice', self::TEXT_DOMAIN),
+            array($this, 'auto_generate_copyright_callback'),
+            self::PLUGIN_SLUG,
+            'acf_photo_credits_main'
+        );
+        
+        add_settings_field(
+            'default_license_page',
+            __('Default License Acquisition Page', self::TEXT_DOMAIN),
+            array($this, 'default_license_page_callback'),
             self::PLUGIN_SLUG,
             'acf_photo_credits_main'
         );
@@ -574,26 +774,28 @@ class ACF_Photo_Credits_Schema {
             'acf_photo_credits_main'
         );
     }
-    
+
     /**
-     * Settings section callback
+     * Settings section description callback.
+     *
+     * @since 1.0.0
      */
     public function settings_section_callback() {
-        echo '<p>' . __('Configure which categories should include photo credits schema markup.', self::TEXT_DOMAIN) . '</p>';
+        echo '<p>' . __('Configure which categories should include photo credits schema markup and how the plugin should behave.', self::TEXT_DOMAIN) . '</p>';
     }
-    
+
     /**
-     * Target categories callback
+     * Renders the target categories setting field.
+     *
+     * @since 1.0.0
      */
     public function target_categories_callback() {
         $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
         $target_categories = isset($settings['target_categories']) ? $settings['target_categories'] : array('photolog');
-        
         $categories = get_categories();
         
         echo '<fieldset>';
         foreach ($categories as $category) {
-            // Check against both slug and name
             $checked = (in_array($category->slug, $target_categories) || in_array($category->name, $target_categories)) ? 'checked' : '';
             echo '<label>';
             echo '<input type="checkbox" name="' . self::PLUGIN_SLUG . '_settings[target_categories][]" value="' . esc_attr($category->slug) . '" ' . $checked . '>';
@@ -603,20 +805,37 @@ class ACF_Photo_Credits_Schema {
         echo '</fieldset>';
         echo '<p class="description">' . __('Select which categories should include photo credits in schema markup.', self::TEXT_DOMAIN) . '</p>';
     }
-    
+
     /**
-     * Auto-fill CC links callback
+     * Renders the auto-generate copyright setting field.
+     *
+     * @since 1.1.0
      */
-    public function auto_fill_cc_links_callback() {
+    public function auto_generate_copyright_callback() {
         $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
-        $auto_fill = isset($settings['auto_fill_cc_links']) ? $settings['auto_fill_cc_links'] : true;
+        $auto_generate = isset($settings['auto_generate_copyright']) ? $settings['auto_generate_copyright'] : true;
         
-        echo '<input type="checkbox" name="' . self::PLUGIN_SLUG . '_settings[auto_fill_cc_links]" value="1" ' . checked(1, $auto_fill, false) . '>';
-        echo '<p class="description">' . __('Automatically fill CC license links when a license is selected.', self::TEXT_DOMAIN) . '</p>';
+        echo '<input type="checkbox" name="' . self::PLUGIN_SLUG . '_settings[auto_generate_copyright]" value="1" ' . checked(1, $auto_generate, false) . '>';
+        echo '<p class="description">' . __('Automatically generate copyright notice from photographer name and license if not manually set.', self::TEXT_DOMAIN) . '</p>';
     }
-    
+
     /**
-     * Include sitemap data callback
+     * Renders the default license page setting field.
+     *
+     * @since 1.1.0
+     */
+    public function default_license_page_callback() {
+        $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
+        $default_page = isset($settings['default_license_page']) ? $settings['default_license_page'] : '';
+        
+        echo '<input type="url" name="' . self::PLUGIN_SLUG . '_settings[default_license_page]" value="' . esc_attr($default_page) . '" class="regular-text">';
+        echo '<p class="description">' . __('Default URL for license acquisition (used when individual image license page is not set).', self::TEXT_DOMAIN) . '</p>';
+    }
+
+    /**
+     * Renders the sitemap data inclusion setting field.
+     *
+     * @since 1.0.0
      */
     public function include_sitemap_data_callback() {
         $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
@@ -625,14 +844,17 @@ class ACF_Photo_Credits_Schema {
         echo '<input type="checkbox" name="' . self::PLUGIN_SLUG . '_settings[include_sitemap_data]" value="1" ' . checked(1, $include_sitemap, false) . '>';
         echo '<p class="description">' . __('Include image credit information in WordPress sitemaps.', self::TEXT_DOMAIN) . '</p>';
     }
-    
+
     /**
-     * Admin page
+     * Renders the main plugin settings page.
+     *
+     * @since 1.0.0
      */
     public function admin_page() {
         ?>
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
             <form method="post" action="options.php">
                 <?php
                 settings_fields(self::PLUGIN_SLUG . '_settings');
@@ -653,6 +875,26 @@ class ACF_Photo_Credits_Schema {
                 </tr>
             </table>
             
+            <h2><?php _e('Required ACF Fields', self::TEXT_DOMAIN); ?></h2>
+            <p><?php _e('For the plugin to work properly, create an ACF field group with the following fields for images/attachments:', self::TEXT_DOMAIN); ?></p>
+            <ul>
+                <li><strong>photographer</strong> (Text field) - Photographer name</li>
+                <li><strong>photographer_website</strong> (URL field) - Photographer website</li>
+                <li><strong>cc_license</strong> (Select field) - Creative Commons license</li>
+                <li><strong>cc_license_link</strong> (URL field) - License URL (can be auto-filled)</li>
+                <li><strong>acquire_license_page</strong> (URL field) - Page to acquire license</li>
+                <li><strong>copyright_notice</strong> (Text field) - Custom copyright notice</li>
+            </ul>
+            
+            <h2><?php _e('Workflow Recommendation', self::TEXT_DOMAIN); ?></h2>
+            <p><?php _e('For best results, follow this workflow:', self::TEXT_DOMAIN); ?></p>
+            <ol>
+                <li><?php _e('Upload images to Media Library first', self::TEXT_DOMAIN); ?></li>
+                <li><?php _e('Fill out ACF fields for each image and save', self::TEXT_DOMAIN); ?></li>
+                <li><?php _e('Insert images into posts using "Add Media" button', self::TEXT_DOMAIN); ?></li>
+                <li><?php _e('Publish posts - schema markup will be automatically generated', self::TEXT_DOMAIN); ?></li>
+            </ol>
+            
             <h2><?php _e('Testing', self::TEXT_DOMAIN); ?></h2>
             <p><?php _e('Test your schema markup with these tools:', self::TEXT_DOMAIN); ?></p>
             <ul>
@@ -664,7 +906,7 @@ class ACF_Photo_Credits_Schema {
     }
 }
 
-// Initialize plugin
+// Initialize the plugin
 new ACF_Photo_Credits_Schema();
 
 ?>
