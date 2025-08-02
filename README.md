@@ -6,6 +6,7 @@ A WordPress plugin that automatically generates Schema.org markup for photograph
 
 - **Automatic Schema.org generation**: Creates ImageObject and Article markup for enhanced SEO
 - **Creative Commons support**: Full support for all CC license types with automatic URL generation
+- **Enhanced Gutenberg compatibility**: Supports both traditional WordPress images and modern Block Editor formats
 - **Featured image integration**: Includes featured images in schema generation
 - **Flexible configuration**: Target specific categories and/or tags with OR logic
 - **Sitemap enhancement**: Adds image credit data to WordPress XML sitemaps
@@ -71,7 +72,7 @@ Configure your CC License select field with these values:
 
 1. **Upload images** to Media Library first
 2. **Add ACF data** to each image (photographer, license, etc.) and save
-3. **Insert images** into posts using the media picker
+3. **Insert images** into posts using the media picker or Gutenberg blocks
 4. **Assign categories and/or tags** to posts according to your plugin settings
 5. **Publish posts** - schema markup is automatically generated
 
@@ -93,11 +94,23 @@ For best results, follow this recommended workflow:
 
 1. **Upload images to Media Library first** - This ensures ACF fields are available
 2. **Fill out ACF fields for each image and save** - Complete all photographer and license information
-3. **Insert images into posts using "Add Media" button** - This maintains the `wp-image-ID` classes needed for schema detection
+3. **Insert images into posts** - Use "Add Media" button, Gutenberg Image blocks, or Gallery blocks
 4. **Assign appropriate categories and/or tags** - Configure posts to match your plugin settings
 5. **Publish posts** - Schema markup will be automatically generated based on your category and tag settings
 
-> **Note**: The plugin detects images in post content using WordPress CSS classes (`wp-image-ID`). Images inserted from the Media Library will automatically have these classes.
+> **Note**: The plugin detects images in post content using WordPress CSS classes (`wp-image-ID`) and modern Gutenberg data attributes (`data-id`). Images inserted from the Media Library or Gutenberg blocks will automatically have these identifiers.
+
+### Gutenberg Compatibility
+
+Version 1.3.0+ includes enhanced support for:
+
+- **Image blocks**: Traditional single image blocks
+- **Gallery blocks**: Multi-image gallery layouts
+- **Media & Text blocks**: Combined text and image blocks
+- **Cover blocks**: Background image detection
+- **Classic Editor**: Full backward compatibility
+
+The plugin automatically detects images regardless of how they were inserted into your content.
 
 ### Updating Existing Posts
 
@@ -147,8 +160,10 @@ Validate your schema markup with these tools:
 
 - **Schema Types**: ImageObject, Article
 - **Output Format**: JSON-LD in document head
+- **Image Detection**: Enhanced regex supporting both traditional WordPress and Gutenberg formats
 - **Performance**: Optimized batch processing of image data
 - **Compatibility**: WordPress 5.0+ and ACF free version
+- **Hook Priority**: Optimized for compatibility with SEO plugins
 
 ## Support
 
@@ -162,6 +177,7 @@ This plugin was created with AI assistance and follows WordPress coding standard
 
 ### Version History
 
+- **1.3.0**: Enhanced Gutenberg compatibility, improved image detection for Gallery blocks and modern Block Editor formats
 - **1.2.0**: Added tag support with OR logic, enhanced schema generation rules
 - **1.1.0**: Enhanced schema generation, copyright automation, acquisition page fallbacks
 - **1.0.0**: Initial release with basic ImageObject schema
