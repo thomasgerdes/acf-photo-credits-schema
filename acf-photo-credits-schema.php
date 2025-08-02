@@ -33,7 +33,8 @@ if (!defined('ABSPATH')) {
  * - Supports both individual and default values for license acquisition pages
  * - Automatically includes featured images and content images as separate schemas
  * - Enhances WordPress sitemaps with image credit information
- * - Configurable target categories and automatic copyright generation
+ * - Configurable target categories and tags with OR logic
+ * - Automatic copyright generation
  *
  * @since 1.0.0
  */
@@ -113,6 +114,7 @@ class ACF_Photo_Credits_Schema {
     public function activate() {
         $default_settings = array(
             'target_categories' => array('photolog'),
+            'target_tags' => array(),
             'auto_fill_cc_links' => true,
             'include_sitemap_data' => true,
             'auto_generate_copyright' => true,
@@ -203,7 +205,7 @@ class ACF_Photo_Credits_Schema {
      * Determines if schema markup should be added to the current page.
      *
      * Checks if the current page is a single post and belongs to one of the
-     * configured target categories.
+     * configured target categories OR has one of the configured target tags.
      *
      * @since 1.0.0
      * @return bool True if schema should be added, false otherwise.
@@ -215,34 +217,66 @@ class ACF_Photo_Credits_Schema {
         
         $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
         $target_categories = isset($settings['target_categories']) ? $settings['target_categories'] : array('photolog');
+        $target_tags = isset($settings['target_tags']) ? $settings['target_tags'] : array();
         
+        // Check categories (OR logic within categories)
+        $category_match = false;
         foreach ($target_categories as $category) {
             if (in_category($category) || in_category(strtolower($category)) || in_category(ucfirst(strtolower($category)))) {
-                return true;
+                $category_match = true;
+                break;
             }
         }
         
-        return false;
+        // Check tags (OR logic within tags)
+        $tag_match = false;
+        if (!empty($target_tags)) {
+            foreach ($target_tags as $tag) {
+                if (has_tag($tag) || has_tag(strtolower($tag)) || has_tag(ucfirst(strtolower($tag)))) {
+                    $tag_match = true;
+                    break;
+                }
+            }
+        }
+        
+        // Return true if either categories OR tags match
+        return $category_match || $tag_match;
     }
 
     /**
-     * Checks if a post belongs to one of the target categories.
+     * Checks if a post belongs to one of the target categories or has one of the target tags.
      *
      * @since 1.0.0
      * @param int $post_id The post ID to check.
-     * @return bool True if the post is in a target category, false otherwise.
+     * @return bool True if the post is in a target category or has a target tag, false otherwise.
      */
     private function is_target_category($post_id) {
         $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
         $target_categories = isset($settings['target_categories']) ? $settings['target_categories'] : array('photolog');
+        $target_tags = isset($settings['target_tags']) ? $settings['target_tags'] : array();
         
+        // Check categories (OR logic within categories)
+        $category_match = false;
         foreach ($target_categories as $category) {
             if (in_category($category, $post_id) || in_category(strtolower($category), $post_id) || in_category(ucfirst(strtolower($category)), $post_id)) {
-                return true;
+                $category_match = true;
+                break;
             }
         }
         
-        return false;
+        // Check tags (OR logic within tags)
+        $tag_match = false;
+        if (!empty($target_tags)) {
+            foreach ($target_tags as $tag) {
+                if (has_tag($tag, $post_id) || has_tag(strtolower($tag), $post_id) || has_tag(ucfirst(strtolower($tag)), $post_id)) {
+                    $tag_match = true;
+                    break;
+                }
+            }
+        }
+        
+        // Return true if either categories OR tags match
+        return $category_match || $tag_match;
     }
 
     /**
@@ -751,6 +785,14 @@ class ACF_Photo_Credits_Schema {
         );
         
         add_settings_field(
+            'target_tags',
+            __('Target Tags', self::TEXT_DOMAIN),
+            array($this, 'target_tags_callback'),
+            self::PLUGIN_SLUG,
+            'acf_photo_credits_main'
+        );
+        
+        add_settings_field(
             'auto_generate_copyright',
             __('Auto-generate Copyright Notice', self::TEXT_DOMAIN),
             array($this, 'auto_generate_copyright_callback'),
@@ -781,7 +823,7 @@ class ACF_Photo_Credits_Schema {
      * @since 1.0.0
      */
     public function settings_section_callback() {
-        echo '<p>' . __('Configure which categories should include photo credits schema markup and how the plugin should behave.', self::TEXT_DOMAIN) . '</p>';
+        echo '<p>' . __('Configure which categories and tags should include photo credits schema markup and how the plugin should behave. Schema will be generated if the post matches ANY selected category OR ANY selected tag.', self::TEXT_DOMAIN) . '</p>';
     }
 
     /**
@@ -804,6 +846,32 @@ class ACF_Photo_Credits_Schema {
         }
         echo '</fieldset>';
         echo '<p class="description">' . __('Select which categories should include photo credits in schema markup.', self::TEXT_DOMAIN) . '</p>';
+    }
+
+    /**
+     * Renders the target tags setting field.
+     *
+     * @since 1.1.0
+     */
+    public function target_tags_callback() {
+        $settings = get_option(self::PLUGIN_SLUG . '_settings', array());
+        $target_tags = isset($settings['target_tags']) ? $settings['target_tags'] : array();
+        $tags = get_tags();
+        
+        echo '<fieldset>';
+        if (!empty($tags)) {
+            foreach ($tags as $tag) {
+                $checked = (in_array($tag->slug, $target_tags) || in_array($tag->name, $target_tags)) ? 'checked' : '';
+                echo '<label>';
+                echo '<input type="checkbox" name="' . self::PLUGIN_SLUG . '_settings[target_tags][]" value="' . esc_attr($tag->slug) . '" ' . $checked . '>';
+                echo ' ' . esc_html($tag->name) . ' (' . esc_html($tag->slug) . ')';
+                echo '</label><br>';
+            }
+        } else {
+            echo '<p><em>' . __('No tags found. Tags will appear here once you create them.', self::TEXT_DOMAIN) . '</em></p>';
+        }
+        echo '</fieldset>';
+        echo '<p class="description">' . __('Select which tags should include photo credits in schema markup. Schema will be generated if the post has ANY selected category OR ANY selected tag.', self::TEXT_DOMAIN) . '</p>';
     }
 
     /**
@@ -886,12 +954,25 @@ class ACF_Photo_Credits_Schema {
                 <li><strong>copyright_notice</strong> (Text field) - Custom copyright notice</li>
             </ul>
             
+            <h2><?php _e('Logic Overview', self::TEXT_DOMAIN); ?></h2>
+            <p><?php _e('Schema markup is generated when:', self::TEXT_DOMAIN); ?></p>
+            <ul>
+                <li><?php _e('Post belongs to ANY selected category, OR', self::TEXT_DOMAIN); ?></li>
+                <li><?php _e('Post has ANY selected tag', self::TEXT_DOMAIN); ?></li>
+            </ul>
+            <p><strong><?php _e('Example:', self::TEXT_DOMAIN); ?></strong> <?php _e('If you select categories "photolog" and "travel", and tags "photography" and "creative-commons", then schema will be generated for posts that:', self::TEXT_DOMAIN); ?></p>
+            <ul>
+                <li><?php _e('Are in category "photolog" OR "travel", OR', self::TEXT_DOMAIN); ?></li>
+                <li><?php _e('Have tag "photography" OR "creative-commons"', self::TEXT_DOMAIN); ?></li>
+            </ul>
+            
             <h2><?php _e('Workflow Recommendation', self::TEXT_DOMAIN); ?></h2>
             <p><?php _e('For best results, follow this workflow:', self::TEXT_DOMAIN); ?></p>
             <ol>
                 <li><?php _e('Upload images to Media Library first', self::TEXT_DOMAIN); ?></li>
                 <li><?php _e('Fill out ACF fields for each image and save', self::TEXT_DOMAIN); ?></li>
                 <li><?php _e('Insert images into posts using "Add Media" button', self::TEXT_DOMAIN); ?></li>
+                <li><?php _e('Assign appropriate categories and/or tags to your posts', self::TEXT_DOMAIN); ?></li>
                 <li><?php _e('Publish posts - schema markup will be automatically generated', self::TEXT_DOMAIN); ?></li>
             </ol>
             
