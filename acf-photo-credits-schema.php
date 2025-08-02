@@ -3,7 +3,7 @@
  * Plugin Name: ACF Photo Credits Schema
  * Plugin URI: https://github.com/thomasgerdes/acf-photo-credits-schema
  * Description: WordPress plugin that adds Schema.org markup for photographer credits and Creative Commons licenses from Advanced Custom Fields
- * Version: 1.1.0
+ * Version: 1.3.0
  * Author: Thomas Gerdes
  * Author URI: https://thomasgerdes.de
  * License: MIT
@@ -43,10 +43,10 @@ class ACF_Photo_Credits_Schema {
     /**
      * Plugin version number
      *
-     * @since 1.0.0
+     * @since 1.3.0
      * @var string
      */
-    const VERSION = '1.1.0';
+    const VERSION = '1.3.0';
 
     /**
      * Plugin slug used for options and hooks
@@ -95,6 +95,7 @@ class ACF_Photo_Credits_Schema {
         }
 
         // Core functionality hooks
+        // Use higher priority to ensure schema is rendered after other plugins
         add_action('wp_head', array($this, 'add_combined_schema'), 20);
         add_filter('wp_sitemaps_posts_entry', array($this, 'enhance_sitemap'), 10, 3);
 
@@ -285,7 +286,7 @@ class ACF_Photo_Credits_Schema {
      * Scans the current post for images and generates Schema.org ImageObject
      * markup for each image that has ACF photo credit data.
      *
-     * @since 1.1.0
+     * @since 1.3.0
      * @return array Array of ImageObject schema arrays.
      */
     private function get_image_schemas() {
@@ -299,10 +300,11 @@ class ACF_Photo_Credits_Schema {
             $image_ids[] = $featured_image_id;
         }
         
-        // Extract image IDs from post content using WordPress image CSS classes
-        preg_match_all('/wp-image-(\d+)/', $post->post_content, $matches);
-        if (!empty($matches[1])) {
-            $content_image_ids = array_unique($matches[1]);
+        // Enhanced image detection: Extract image IDs from post content using both 
+        // traditional WordPress image CSS classes and modern Gutenberg data attributes
+        preg_match_all('/(wp-image|data-id)-(\d+)/', $post->post_content, $matches);
+        if (!empty($matches[2])) {
+            $content_image_ids = array_unique($matches[2]);
             $image_ids = array_merge($image_ids, $content_image_ids);
         }
         
@@ -661,17 +663,19 @@ class ACF_Photo_Credits_Schema {
     /**
      * Extracts image data from post content for sitemap inclusion.
      *
-     * @since 1.0.0
+     * @since 1.3.0
      * @param object $post The post object to process.
      * @return array Array of image data for sitemap.
      */
     private function get_post_images_for_sitemap($post) {
-        preg_match_all('/wp-image-(\d+)/', $post->post_content, $matches);
-        if (empty($matches[1])) {
+        // Enhanced image detection: Use improved regex to match both traditional 
+        // WordPress image classes and modern Gutenberg data attributes
+        preg_match_all('/(wp-image|data-id)-(\d+)/', $post->post_content, $matches);
+        if (empty($matches[2])) {
             return array();
         }
         
-        $image_ids = array_unique($matches[1]);
+        $image_ids = array_unique($matches[2]);
         $images = array();
         
         foreach ($image_ids as $image_id) {
@@ -989,5 +993,4 @@ class ACF_Photo_Credits_Schema {
 
 // Initialize the plugin
 new ACF_Photo_Credits_Schema();
-
 ?>
