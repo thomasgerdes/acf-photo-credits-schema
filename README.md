@@ -1,4 +1,4 @@
-# ACF Photo Credits Schema
+# ACF Photo Credits Schema WordPress Plugin
 
 A WordPress plugin that automatically generates Schema.org markup for photographer credits and Creative Commons licenses from Advanced Custom Fields data.
 
