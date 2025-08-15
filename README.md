@@ -4,7 +4,7 @@ A WordPress plugin that automatically generates Schema.org markup for photograph
 
 ## Features
 
-- **Automatic Schema.org generation**: Creates ImageObject and Article markup for enhanced SEO
+- **Automatic Schema.org generation**: Creates ImageObject and article markup for enhanced SEO
 - **Creative Commons support**: Full support for all CC license types with automatic URL generation
 - **Enhanced Gutenberg compatibility**: Supports both traditional WordPress images and modern Block Editor formats
 - **Featured image integration**: Includes featured images in schema generation
