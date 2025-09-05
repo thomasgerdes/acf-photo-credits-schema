@@ -4,14 +4,18 @@ A WordPress plugin that automatically generates Schema.org markup for photograph
 
 ## Features
 
-- **Automatic Schema.org generation**: Creates ImageObject and article markup for enhanced SEO
+- **Automatic Schema.org generation**: Creates comprehensive ImageObject markup for enhanced SEO
 - **Creative Commons support**: Full support for all CC license types with automatic URL generation
+- **Enhanced image SEO**: Contextual information from post tags and categories for better search visibility
+- **Geographic data**: Location information from ACF fields and EXIF data with intelligent priority system
+- **Genre detection**: Automatic photography genre classification with custom mapping support
 - **Enhanced Gutenberg compatibility**: Supports both traditional WordPress images and modern Block Editor formats
-- **Featured image integration**: Includes featured images in schema generation
+- **Featured image integration**: Includes featured images in schema generation with representativeOfPage marking
 - **Flexible configuration**: Target specific categories and/or tags with OR logic
 - **Sitemap enhancement**: Adds image credit data to WordPress XML sitemaps
 - **Automatic copyright generation**: Creates copyright notices from photographer and license data
 - **License acquisition pages**: Configurable URLs for license purchases with intelligent fallbacks
+- **Admin notifications**: Helpful reminders for schema updates after ACF changes
 
 ## Requirements
 
@@ -41,6 +45,7 @@ Create an ACF field group for **Attachments** with these fields:
 | `cc_license_link` | URL | License URL (auto-filled) | No |
 | `acquire_license_page` | URL | License purchase page | No |
 | `copyright_notice` | Text | Custom copyright text | No |
+| `location` | Text | Geographic location | No |
 
 *At least one of `photographer` or `cc_license` is required for schema generation.
 
@@ -63,6 +68,7 @@ Configure your CC License select field with these values:
 - **Auto-generate Copyright**: Automatically create copyright notices from credit data
 - **Default License Page**: Fallback URL for license acquisition
 - **Include Sitemap Data**: Add image credits to WordPress XML sitemaps
+- **Custom Genre Mappings**: Define custom photography genre classifications
 
 **Schema Generation Logic**: Schema markup is generated when posts match ANY selected category OR ANY selected tag (OR logic).
 
@@ -71,7 +77,7 @@ Configure your CC License select field with these values:
 ### Basic Workflow
 
 1. **Upload images** to Media Library first
-2. **Add ACF data** to each image (photographer, license, etc.) and save
+2. **Add ACF data** to each image (photographer, license, location, etc.) and save
 3. **Insert images** into posts using the media picker or Gutenberg blocks
 4. **Assign categories and/or tags** to posts according to your plugin settings
 5. **Publish posts** - schema markup is automatically generated
@@ -93,16 +99,17 @@ Schema markup is generated when posts meet ANY of these conditions:
 For best results, follow this recommended workflow:
 
 1. **Upload images to Media Library first** - This ensures ACF fields are available
-2. **Fill out ACF fields for each image and save** - Complete all photographer and license information
+2. **Fill out ACF fields for each image and save** - Complete all photographer, license, and location information
 3. **Insert images into posts** - Use "Add Media" button, Gutenberg Image blocks, or Gallery blocks
 4. **Assign appropriate categories and/or tags** - Configure posts to match your plugin settings
 5. **Publish posts** - Schema markup will be automatically generated based on your category and tag settings
+6. **Re-save posts when updating image data** - Important for refreshing schema markup after ACF changes
 
-> **Note**: The plugin detects images in post content using WordPress CSS classes (`wp-image-ID`) and modern Gutenberg data attributes (`data-id`). Images inserted from the Media Library or Gutenberg blocks will automatically have these identifiers.
+> **Schema Update Notice**: When you update ACF data for images, remember to re-save the posts containing those images to refresh schema markup. The plugin displays helpful admin notices to remind you of this.
 
 ### Gutenberg Compatibility
 
-Version 1.3.0+ includes enhanced support for:
+Version 1.4.0+ includes enhanced support for:
 
 - **Image blocks**: Traditional single image blocks
 - **Gallery blocks**: Multi-image gallery layouts
@@ -111,6 +118,16 @@ Version 1.3.0+ includes enhanced support for:
 - **Classic Editor**: Full backward compatibility
 
 The plugin automatically detects images regardless of how they were inserted into your content.
+
+### New Features in v1.4.0
+
+- **Enhanced Image SEO**: ImageObjects now include "about" entities and "keywords" from post tags and categories for better search visibility
+- **Geographic Data**: Location information from ACF fields and EXIF data with intelligent priority system
+- **Genre Detection**: Automatic photography genre classification with custom mapping support
+- **Technical Metadata**: File format, size, dimensions, and enhanced image properties
+- **Featured Image Support**: Featured images marked as "representativeOfPage" for better SEO
+- **Admin Notifications**: Helpful reminders for schema updates after ACF changes
+- **SEO Plugin Compatibility**: Article schema generation disabled to avoid conflicts with SEO plugins like Yoast SEO
 
 ### Updating Existing Posts
 
@@ -123,7 +140,7 @@ For existing sites with many posts, you can trigger schema regeneration by:
 
 ### Schema Output
 
-The plugin generates structured data including:
+The plugin generates comprehensive structured data including:
 
 ```json
 {
@@ -132,11 +149,25 @@ The plugin generates structured data including:
   "contentUrl": "https://example.com/image.jpg",
   "creator": {
     "@type": "Person", 
-    "name": "Photographer Name"
+    "name": "Photographer Name",
+    "url": "https://photographer-website.com"
   },
   "license": "https://creativecommons.org/licenses/by/4.0/",
   "creditText": "Photo by Photographer Name / CC BY 4.0",
-  "acquireLicensePage": "https://example.com/licenses"
+  "acquireLicensePage": "https://example.com/licenses",
+  "contentLocation": {
+    "@type": "Place",
+    "name": "Location Name"
+  },
+  "about": [
+    {
+      "@type": "Thing",
+      "name": "Photography"
+    }
+  ],
+  "keywords": "photography, travel, landscape",
+  "genre": ["Landscape Photography"],
+  "representativeOfPage": true
 }
 ```
 
@@ -149,6 +180,23 @@ The plugin uses an intelligent fallback system for license acquisition pages:
 3. Plugin settings default license page
 4. Photographer website as last resort
 
+## Geographic Information
+
+The plugin intelligently handles location data with this priority:
+
+1. ACF `location` field (image-specific)
+2. ACF `location` field (post-level)
+3. EXIF GPS coordinates from image metadata
+
+## Custom Genre Mappings
+
+Define custom photography genre classifications in the plugin settings using the format:
+```
+tag-slug=Genre Name
+street=Urban Photography
+portrait=Portrait Photography
+```
+
 ## Testing
 
 Validate your schema markup with these tools:
@@ -158,7 +206,7 @@ Validate your schema markup with these tools:
 
 ## Technical Details
 
-- **Schema Types**: ImageObject, Article
+- **Schema Types**: ImageObject (Article generation disabled for SEO plugin compatibility)
 - **Output Format**: JSON-LD in document head
 - **Image Detection**: Enhanced regex supporting both traditional WordPress and Gutenberg formats
 - **Performance**: Optimized batch processing of image data
@@ -177,6 +225,7 @@ This plugin was created with AI assistance and follows WordPress coding standard
 
 ### Version History
 
+- **1.4.0**: Enhanced image SEO with contextual data, geographic information, genre detection, technical metadata, admin notifications, and improved SEO plugin compatibility
 - **1.3.0**: Enhanced Gutenberg compatibility, improved image detection for Gallery blocks and modern Block Editor formats
 - **1.2.0**: Added tag support with OR logic, enhanced schema generation rules
 - **1.1.0**: Enhanced schema generation, copyright automation, acquisition page fallbacks
